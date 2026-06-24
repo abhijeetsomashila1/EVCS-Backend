@@ -1,12 +1,6 @@
 const express = require("express");
-
 const router = express.Router();
-
 const db = require("../database");
-
-
-
-
 const dgram = require("dgram");
 
 // Helper to send Wi-SUN UDP packet
@@ -23,439 +17,182 @@ function sendWisunCommand(command, ipv6Address = "fd12:3456::1") {
     });
 }
 
+
+
 // START CHARGING API
 
 
-router.post("/start",(req,res)=>{
+router.post("/start", (req, res) => {
 
+    const { user_id, charger_id } = req.body;
 
-    const {user_id, charger_id}=req.body;
+    const userQuery = "SELECT * FROM users WHERE user_id=$1";
 
+    db.query(userQuery, [user_id], (error, userResult) => {
 
-    const userQuery =
-    "SELECT * FROM users WHERE user_id=?";
-
-
-    db.query(userQuery,[user_id],(error,userResult)=>{
-
-
-        if(error){
-
+        if (error) {
             return res.status(500).send(error);
-
         }
 
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({ message: "User not found" });
+        }
 
-        if(userResult.length===0){
+        const chargerQuery = "SELECT * FROM chargers WHERE charger_id=$1";
 
+        db.query(chargerQuery, [charger_id], (error, chargerResult) => {
 
-            return res.status(404).json({
+            if (error) {
+                return res.status(500).send(error);
+            }
 
-                message:"User not found"
+            if (chargerResult.rows.length === 0) {
+                return res.status(404).json({ message: "Charger not found" });
+            }
+
+            if (chargerResult.rows[0].status !== "AVAILABLE") {
+                return res.status(400).json({ message: "Charger is already in use" });
+            }
+
+            const sessionQuery =
+                "INSERT INTO charging_sessions(user_id, charger_id, status) VALUES($1, $2, $3) RETURNING session_id";
+
+            db.query(sessionQuery, [user_id, charger_id, "Charging"], (error, result) => {
+
+                if (error) {
+                    return res.status(500).send(error);
+                }
+
+                const updateQuery = "UPDATE chargers SET status=$1 WHERE charger_id=$2";
+
+                db.query(updateQuery, ["CHARGING", charger_id], (error) => {
+
+                    if (error) {
+                        return res.status(500).send(error);
+                    }
+
+                    sendWisunCommand("START", chargerResult.rows[0].wisun_id); // Trigger Wi-SUN relay hardware
+
+                    res.json({
+                        message: "Charging Started",
+                        session_id: result.rows[0].session_id
+                    });
+
+                });
 
             });
 
-
-        }
-
-
-
-
-        const chargerQuery =
-        "SELECT * FROM chargers WHERE charger_id=?";
-
-
-
-        db.query(chargerQuery,[charger_id],(error,chargerResult)=>{
-
-
-            if(error){
-
-                return res.status(500).send(error);
-
-            }
-
-
-
-            if(chargerResult.length===0){
-
-
-                return res.status(404).json({
-
-                    message:"Charger not found"
-
-                });
-
-
-            }
-
-
-
-            if(chargerResult[0].status !== "AVAILABLE"){
-
-
-                return res.status(400).json({
-
-                    message:"Charger is already in use"
-
-                });
-
-
-            }
-
-
-
-
-            const sessionQuery =
-
-            "INSERT INTO charging_sessions(user_id,charger_id,status) VALUES(?,?,?)";
-
-
-
-            db.query(
-
-                sessionQuery,
-
-                [user_id,charger_id,"Charging"],
-
-
-                (error,result)=>{
-
-
-                    if(error){
-
-                        return res.status(500).send(error);
-
-                    }
-
-
-
-
-                    const updateQuery =
-
-                    "UPDATE chargers SET status=? WHERE charger_id=?";
-
-
-
-                    db.query(
-
-                        updateQuery,
-
-                        ["CHARGING",charger_id],
-
-
-                        (error)=>{
-
-
-                            if(error){
-
-                                return res.status(500).send(error);
-
-                            }
-
-
-
-                            sendWisunCommand("START", chargerResult[0].wisun_id); // Trigger Wi-SUN relay hardware
-
-                            res.json({
-
-                                message:"Charging Started",
-
-                                session_id:result.insertId
-
-                            });
-
-
-                        }
-
-
-                    );
-
-
-                }
-
-
-            );
-
-
-
         });
-
-
 
     });
 
-
-
 });
-
-
-
-
-
 
 
 
 // STOP CHARGING API
 
 
-router.post("/stop",(req,res)=>{
+router.post("/stop", (req, res) => {
 
+    const { session_id, charger_id } = req.body;
 
-    const {session_id, charger_id}=req.body;
+    const sessionQuery = "SELECT * FROM charging_sessions WHERE session_id=$1";
 
+    db.query(sessionQuery, [session_id], (error, sessionResult) => {
 
-
-    const sessionQuery =
-
-    "SELECT * FROM charging_sessions WHERE session_id=?";
-
-
-
-    db.query(
-
-        sessionQuery,
-
-        [session_id],
-
-
-        (error,sessionResult)=>{
-
-
-            if(error){
-
-                return res.status(500).send(error);
-
-            }
-
-
-
-            if(sessionResult.length===0){
-
-
-                return res.status(404).json({
-
-                    message:"Session not found"
-
-                });
-
-
-            }
-
-
-
-
-
-            const updateSession =
-
-            "UPDATE charging_sessions SET status=?, end_time=NOW() WHERE session_id=?";
-
-
-
-            db.query(
-
-                updateSession,
-
-                ["Completed",session_id],
-
-
-                (error)=>{
-
-
-                    if(error){
-
-                        return res.status(500).send(error);
-
-                    }
-
-
-
-
-
-                    const updateCharger =
-
-                    "UPDATE chargers SET status=? WHERE charger_id=?";
-
-
-
-                    db.query(
-
-                        updateCharger,
-
-                        ["AVAILABLE",charger_id],
-
-
-                        (error)=>{
-
-
-                            if(error){
-
-                                return res.status(500).send(error);
-
-                            }
-
-
-
-                            // Trigger Wi-SUN relay hardware by fetching the IP
-                            db.query("SELECT wisun_id FROM chargers WHERE charger_id=?", [charger_id], (err, resWisun) => {
-                                if (!err && resWisun.length > 0) {
-                                    sendWisunCommand("STOP", resWisun[0].wisun_id);
-                                }
-                            });
-
-                            res.json({
-
-                                message:"Charging Stopped"
-
-                            });
-
-
-
-                        }
-
-
-                    );
-
-
-
-                }
-
-
-            );
-
-
-
+        if (error) {
+            return res.status(500).send(error);
         }
 
+        if (sessionResult.rows.length === 0) {
+            return res.status(404).json({ message: "Session not found" });
+        }
 
-    );
+        const updateSession =
+            "UPDATE charging_sessions SET status=$1, end_time=NOW() WHERE session_id=$2";
 
+        db.query(updateSession, ["Completed", session_id], (error) => {
+
+            if (error) {
+                return res.status(500).send(error);
+            }
+
+            const updateCharger = "UPDATE chargers SET status=$1 WHERE charger_id=$2";
+
+            db.query(updateCharger, ["AVAILABLE", charger_id], (error) => {
+
+                if (error) {
+                    return res.status(500).send(error);
+                }
+
+                // Trigger Wi-SUN relay hardware by fetching the IP
+                db.query("SELECT wisun_id FROM chargers WHERE charger_id=$1", [charger_id], (err, resWisun) => {
+                    if (!err && resWisun.rows.length > 0) {
+                        sendWisunCommand("STOP", resWisun.rows[0].wisun_id);
+                    }
+                });
+
+                res.json({ message: "Charging Stopped" });
+
+            });
+
+        });
+
+    });
 
 });
-
-
-
-
-
 
 
 
 // GET SESSION STATUS API
 
 
-router.get("/status",(req,res)=>{
+router.get("/status", (req, res) => {
 
+    const session_id = req.query.session_id;
 
-    const session_id=req.query.session_id;
+    const query = "SELECT * FROM charging_sessions WHERE session_id=$1";
 
+    db.query(query, [session_id], (error, result) => {
 
-
-    const query =
-
-    "SELECT * FROM charging_sessions WHERE session_id=?";
-
-
-
-    db.query(
-
-        query,
-
-        [session_id],
-
-
-        (error,result)=>{
-
-
-            if(error){
-
-                return res.status(500).send(error);
-
-            }
-
-
-
-            if(result.length===0){
-
-
-                return res.status(404).json({
-
-                    message:"Session not found"
-
-                });
-
-
-            }
-
-
-
-            res.json(result[0]);
-
-
+        if (error) {
+            return res.status(500).send(error);
         }
 
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "Session not found" });
+        }
 
-    );
+        res.json(result.rows[0]);
 
+    });
 
 });
-
-
-
-
-
-
 
 
 
 // GET CHARGING HISTORY API
 
 
-router.get("/history",(req,res)=>{
+router.get("/history", (req, res) => {
 
-
-    const user_id=req.query.user_id;
-
-
+    const user_id = req.query.user_id;
 
     const query =
+        "SELECT * FROM charging_sessions WHERE user_id=$1 ORDER BY start_time DESC";
 
-    "SELECT * FROM charging_sessions WHERE user_id=? ORDER BY start_time DESC";
+    db.query(query, [user_id], (error, result) => {
 
-
-
-    db.query(
-
-        query,
-
-        [user_id],
-
-
-        (error,result)=>{
-
-
-            if(error){
-
-                return res.status(500).send(error);
-
-            }
-
-
-
-            res.json(result);
-
-
+        if (error) {
+            return res.status(500).send(error);
         }
 
+        res.json(result.rows);
 
-    );
-
-
+    });
 
 });
-
-
-
-
 
 
 
