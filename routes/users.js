@@ -4,6 +4,44 @@ const db = require("../database");
 
 
 
+// LOGIN API
+// POST /api/auth/login
+// Body: { email, password }
+
+
+router.post("/login", (req, res) => {
+
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
+    }
+
+    const query = "SELECT * FROM users WHERE email=$1 AND password=$2";
+
+    db.query(query, [email, password], (error, result) => {
+
+        if (error) {
+            return res.status(500).send(error);
+        }
+
+        if (result.rows.length === 0) {
+            return res.status(401).json({ message: "Invalid email or password" });
+        }
+
+        res.json({
+            message: "Login successful",
+            user_id: result.rows[0].user_id,
+            name: result.rows[0].name,
+            email: result.rows[0].email
+        });
+
+    });
+
+});
+
+
+
 // REGISTER / LOGIN USER API
 
 
