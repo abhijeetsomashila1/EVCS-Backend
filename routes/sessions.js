@@ -17,183 +17,138 @@ function sendWisunCommand(command, ipv6Address = "fd12:3456::1") {
     });
 }
 
-
-
 // START CHARGING API
-
-
 router.post("/start", (req, res) => {
-
     const { user_id, charger_id } = req.body;
 
-    const userQuery = "SELECT * FROM users WHERE user_id=$1";
+    const userQuery = "SELECT * FROM users WHERE user_id=?";
 
-    db.query(userQuery, [user_id], (error, userResult) => {
-
+    db.get(userQuery, [user_id], (error, userRow) => {
         if (error) {
             return res.status(500).send(error);
         }
 
-        if (userResult.rows.length === 0) {
+        if (!userRow) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        const chargerQuery = "SELECT * FROM chargers WHERE charger_id=$1";
+        const chargerQuery = "SELECT * FROM chargers WHERE charger_id=?";
 
-        db.query(chargerQuery, [charger_id], (error, chargerResult) => {
-
+        db.get(chargerQuery, [charger_id], (error, chargerRow) => {
             if (error) {
                 return res.status(500).send(error);
             }
 
-            if (chargerResult.rows.length === 0) {
+            if (!chargerRow) {
                 return res.status(404).json({ message: "Charger not found" });
             }
 
-            if (chargerResult.rows[0].status !== "AVAILABLE") {
+            if (chargerRow.status !== "AVAILABLE") {
                 return res.status(400).json({ message: "Charger is already in use" });
             }
 
-            const sessionQuery =
-                "INSERT INTO charging_sessions(user_id, charger_id, status) VALUES($1, $2, $3) RETURNING session_id";
+            const sessionQuery = "INSERT INTO charging_sessions(user_id, charger_id, status) VALUES(?, ?, ?)";
 
-            db.query(sessionQuery, [user_id, charger_id, "Charging"], (error, result) => {
-
+            db.run(sessionQuery, [user_id, charger_id, "Charging"], function(error) {
                 if (error) {
                     return res.status(500).send(error);
                 }
+                
+                const sessionId = this.lastID;
 
-                const updateQuery = "UPDATE chargers SET status=$1 WHERE charger_id=$2";
+                const updateQuery = "UPDATE chargers SET status=? WHERE charger_id=?";
 
-                db.query(updateQuery, ["CHARGING", charger_id], (error) => {
-
+                db.run(updateQuery, ["CHARGING", charger_id], (error) => {
                     if (error) {
                         return res.status(500).send(error);
                     }
 
-                    sendWisunCommand("START", chargerResult.rows[0].wisun_id); // Trigger Wi-SUN relay hardware
+                    sendWisunCommand("START", chargerRow.wisun_id); // Trigger Wi-SUN relay hardware
 
                     res.json({
                         message: "Charging Started",
-                        session_id: result.rows[0].session_id
+                        session_id: sessionId
                     });
-
                 });
-
             });
-
         });
-
     });
-
 });
 
-
-
 // STOP CHARGING API
-
-
 router.post("/stop", (req, res) => {
-
     const { session_id, charger_id } = req.body;
 
-    const sessionQuery = "SELECT * FROM charging_sessions WHERE session_id=$1";
+    const sessionQuery = "SELECT * FROM charging_sessions WHERE session_id=?";
 
-    db.query(sessionQuery, [session_id], (error, sessionResult) => {
-
+    db.get(sessionQuery, [session_id], (error, sessionRow) => {
         if (error) {
             return res.status(500).send(error);
         }
 
-        if (sessionResult.rows.length === 0) {
+        if (!sessionRow) {
             return res.status(404).json({ message: "Session not found" });
         }
 
-        const updateSession =
-            "UPDATE charging_sessions SET status=$1, end_time=NOW() WHERE session_id=$2";
+        const updateSession = "UPDATE charging_sessions SET status=?, end_time=CURRENT_TIMESTAMP WHERE session_id=?";
 
-        db.query(updateSession, ["Completed", session_id], (error) => {
-
+        db.run(updateSession, ["Completed", session_id], (error) => {
             if (error) {
                 return res.status(500).send(error);
             }
 
-            const updateCharger = "UPDATE chargers SET status=$1 WHERE charger_id=$2";
+            const updateCharger = "UPDATE chargers SET status=? WHERE charger_id=?";
 
-            db.query(updateCharger, ["AVAILABLE", charger_id], (error) => {
-
+            db.run(updateCharger, ["AVAILABLE", charger_id], (error) => {
                 if (error) {
                     return res.status(500).send(error);
                 }
 
                 // Trigger Wi-SUN relay hardware by fetching the IP
-                db.query("SELECT wisun_id FROM chargers WHERE charger_id=$1", [charger_id], (err, resWisun) => {
-                    if (!err && resWisun.rows.length > 0) {
-                        sendWisunCommand("STOP", resWisun.rows[0].wisun_id);
+                db.get("SELECT wisun_id FROM chargers WHERE charger_id=?", [charger_id], (err, resWisun) => {
+                    if (!err && resWisun) {
+                        sendWisunCommand("STOP", resWisun.wisun_id);
                     }
                 });
 
                 res.json({ message: "Charging Stopped" });
-
             });
-
         });
-
     });
-
 });
 
-
-
 // GET SESSION STATUS API
-
-
 router.get("/status", (req, res) => {
-
     const session_id = req.query.session_id;
 
-    const query = "SELECT * FROM charging_sessions WHERE session_id=$1";
+    const query = "SELECT * FROM charging_sessions WHERE session_id=?";
 
-    db.query(query, [session_id], (error, result) => {
-
+    db.get(query, [session_id], (error, row) => {
         if (error) {
             return res.status(500).send(error);
         }
 
-        if (result.rows.length === 0) {
+        if (!row) {
             return res.status(404).json({ message: "Session not found" });
         }
 
-        res.json(result.rows[0]);
-
+        res.json(row);
     });
-
 });
 
-
-
 // GET CHARGING HISTORY API
-
-
 router.get("/history", (req, res) => {
-
     const user_id = req.query.user_id;
 
-    const query =
-        "SELECT * FROM charging_sessions WHERE user_id=$1 ORDER BY start_time DESC";
+    const query = "SELECT * FROM charging_sessions WHERE user_id=? ORDER BY start_time DESC";
 
-    db.query(query, [user_id], (error, result) => {
-
+    db.all(query, [user_id], (error, rows) => {
         if (error) {
             return res.status(500).send(error);
         }
 
-        res.json(result.rows);
-
+        res.json(rows);
     });
-
 });
-
-
 
 module.exports = router;
