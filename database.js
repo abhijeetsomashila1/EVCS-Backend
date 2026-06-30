@@ -60,7 +60,7 @@ db.serialize(() => {
     db.get("SELECT * FROM chargers WHERE charger_id = ?", ['EV001'], (err, row) => {
         if (!err && !row) {
             db.run(`INSERT INTO chargers (charger_id, wisun_id) VALUES (?, ?)`, 
-                ['EV001', 'fd12:3456::1']);
+                ['EV001', 'fd12:3456::a66d:d4ff:fefc:b292']);
         }
     });
 });
