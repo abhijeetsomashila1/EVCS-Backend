@@ -19,7 +19,10 @@ function sendWisunCommand(command, ipv6Address = "fd12:3456::1") {
 
 // START CHARGING API
 router.post("/start", (req, res) => {
-    const { user_id, charger_id } = req.body;
+    const { user_id, charger_id, amount } = req.body;
+    
+    // Default to 0.1 kWh if amount is not provided
+    const chargeAmount = amount || 0.1;
 
     const userQuery = "SELECT * FROM users WHERE user_id=?";
 
@@ -63,7 +66,8 @@ router.post("/start", (req, res) => {
                         return res.status(500).send(error);
                     }
 
-                    sendWisunCommand("START", chargerRow.wisun_id); // Trigger Wi-SUN relay hardware
+                    // Trigger Wi-SUN relay hardware with amount (e.g. "START:25")
+                    sendWisunCommand(`START:${chargeAmount}`, chargerRow.wisun_id); 
 
                     res.json({
                         message: "Charging Started",
