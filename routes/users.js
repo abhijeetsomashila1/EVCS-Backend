@@ -4,17 +4,17 @@ const pool = require("../database");
 
 // LOGIN API
 router.post("/login", async (req, res) => {
-    const { phone, password } = req.body;
+    const { email, password } = req.body;
 
-    if (!phone || !password) {
-        return res.status(400).json({ message: "Phone number and password are required" });
+    if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
     }
 
     try {
-        const queryRes = await pool.query("SELECT * FROM users WHERE phone=$1 AND password=$2", [phone, password]);
+        const queryRes = await pool.query("SELECT * FROM users WHERE email=$1 AND password=$2", [email, password]);
 
         if (queryRes.rows.length === 0) {
-            return res.status(401).json({ message: "Invalid phone number or password" });
+            return res.status(401).json({ message: "Invalid email or password" });
         }
 
         const row = queryRes.rows[0];
@@ -22,7 +22,7 @@ router.post("/login", async (req, res) => {
             message: "Login successful",
             user_id: row.user_id,
             name: row.name,
-            phone: row.phone
+            email: row.email
         });
     } catch (error) {
         console.error(error);
@@ -35,7 +35,7 @@ router.post("/register-login", async (req, res) => {
     const { name, email, phone } = req.body;
 
     try {
-        const checkRes = await pool.query("SELECT * FROM users WHERE phone=$1", [phone]);
+        const checkRes = await pool.query("SELECT * FROM users WHERE email=$1", [email]);
 
         if (checkRes.rows.length > 0) {
             return res.json({
