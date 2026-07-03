@@ -32,7 +32,7 @@ router.post("/login", async (req, res) => {
 
 // REGISTER / LOGIN USER API
 router.post("/register-login", async (req, res) => {
-    const { name, email, phone } = req.body;
+    const { name, email } = req.body;
 
     try {
         const checkRes = await pool.query("SELECT * FROM users WHERE email=$1", [email]);
@@ -45,8 +45,8 @@ router.post("/register-login", async (req, res) => {
         }
 
         const insertRes = await pool.query(
-            "INSERT INTO users(name, email, phone) VALUES($1, $2, $3) RETURNING user_id",
-            [name, email, phone]
+            "INSERT INTO users(name, email) VALUES($1, $2) RETURNING user_id",
+            [name, email]
         );
 
         res.json({
