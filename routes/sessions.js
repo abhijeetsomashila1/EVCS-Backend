@@ -68,14 +68,17 @@ router.post("/stop", async (req, res) => {
             return res.status(404).json({ message: "Session not found" });
         }
 
+        // Use charger_id from the session if it wasn't provided in the request
+        const actual_charger_id = charger_id || sessionRes.rows[0].charger_id;
+
         await pool.query(
             "UPDATE charging_sessions SET status=$1, end_time=CURRENT_TIMESTAMP WHERE session_id=$2",
             ["Completed", session_id]
         );
 
-        await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["AVAILABLE", charger_id]);
+        await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["AVAILABLE", actual_charger_id]);
 
-        const chargerRes = await pool.query("SELECT wisun_id FROM chargers WHERE charger_id=$1", [charger_id]);
+        const chargerRes = await pool.query("SELECT wisun_id FROM chargers WHERE charger_id=$1", [actual_charger_id]);
         if (chargerRes.rows.length > 0) {
             sendWisunCommand("STOP", chargerRes.rows[0].wisun_id);
         }
