@@ -1,19 +1,24 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../database");
-const dgram = require("dgram");
+const { exec } = require("child_process");
+const path = require("path");
 
-// Helper to send Wi-SUN UDP packet
-function sendWisunCommand(command, ipv6Address = "fd12:3456::1") {
-    const client = dgram.createSocket("udp6");
-    const message = Buffer.from(command);
-    client.send(message, 5001, ipv6Address, (err) => {
-        client.close();
-        if (err) {
-            console.error("Wi-SUN UDP Error:", err);
-        } else {
-            console.log(`[Wi-SUN] Sent '${command}' to ${ipv6Address} on port 5001`);
+// Helper to execute local shell scripts in the backend folder
+function executeShellScript(scriptName) {
+    // The backend root folder (one directory up from routes/)
+    const scriptPath = path.join(__dirname, "..", scriptName);
+    
+    // We execute it using bash. (On Windows you can also use just the scriptPath, but since it's an .sh file bash is safer if running under WSL/Linux)
+    exec(`bash "${scriptPath}"`, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`[Shell Script] Error executing ${scriptName}:`, error);
+            return;
         }
+        if (stderr) {
+            console.error(`[Shell Script] stderr from ${scriptName}:`, stderr);
+        }
+        console.log(`[Shell Script] stdout from ${scriptName}:`, stdout);
     });
 }
 
@@ -46,7 +51,7 @@ router.post("/start", async (req, res) => {
 
         await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["CHARGING", charger_id]);
 
-        sendWisunCommand(`START:${chargeAmount}`, chargerRow.wisun_id); 
+        executeShellScript("evon.sh");
 
         res.json({
             message: "Charging Started",
@@ -77,7 +82,7 @@ router.post("/stop", async (req, res) => {
 
         const chargerRes = await pool.query("SELECT wisun_id FROM chargers WHERE charger_id=$1", [charger_id]);
         if (chargerRes.rows.length > 0) {
-            sendWisunCommand("STOP", chargerRes.rows[0].wisun_id);
+            executeShellScript("evoff.sh");
         }
 
         res.json({ message: "Charging Stopped" });
