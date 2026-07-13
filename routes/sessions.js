@@ -65,22 +65,24 @@ router.post("/start", async (req, res) => {
 
 // STOP CHARGING API
 router.post("/stop", async (req, res) => {
-    const { session_id, charger_id } = req.body;
+    const { session_id } = req.body;
 
     try {
         const sessionRes = await pool.query("SELECT * FROM charging_sessions WHERE session_id=$1", [session_id]);
         if (sessionRes.rows.length === 0) {
             return res.status(404).json({ message: "Session not found" });
         }
+        
+        const db_charger_id = sessionRes.rows[0].charger_id;
 
         await pool.query(
             "UPDATE charging_sessions SET status=$1, end_time=CURRENT_TIMESTAMP WHERE session_id=$2",
             ["Completed", session_id]
         );
 
-        await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["AVAILABLE", charger_id]);
+        await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["AVAILABLE", db_charger_id]);
 
-        const chargerRes = await pool.query("SELECT wisun_id FROM chargers WHERE charger_id=$1", [charger_id]);
+        const chargerRes = await pool.query("SELECT wisun_id FROM chargers WHERE charger_id=$1", [db_charger_id]);
         if (chargerRes.rows.length > 0) {
             executeShellScript("evoff.sh");
         }
