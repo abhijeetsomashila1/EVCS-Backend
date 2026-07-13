@@ -68,6 +68,12 @@ const initDb = async () => {
             await pool.query(`INSERT INTO chargers (charger_id, wisun_id) VALUES ($1, $2)`, 
                 ['EV001', 'fd12:3456::a66d:d4ff:fefc:b292']);
         }
+
+        // Auto-reset any stuck sessions from previous crashes
+        await pool.query("UPDATE chargers SET status = 'AVAILABLE'");
+        await pool.query("UPDATE charging_sessions SET status = 'Completed' WHERE status = 'Charging'");
+        console.log("Database initialized and stuck sessions cleared.");
+
     } catch (err) {
         console.error('Error initializing PostgreSQL tables:', err);
     }
