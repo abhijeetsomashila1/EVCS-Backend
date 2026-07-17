@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 // Connect to PostgreSQL database hosted on the user's Windows PC
 const pool = new Pool({
     user: 'postgres',
-    host: '10.2.140.183',
+    host: '10.2.140.234',
     database: 'evcharger', 
     password: 'Brun#@bh1', 
     port: 5432,
@@ -13,7 +13,7 @@ pool.connect((err, client, release) => {
     if (err) {
         console.error('Error acquiring client from PostgreSQL pool', err.stack);
     } else {
-        console.log('Connected to PostgreSQL database successfully at 10.2.140.183');
+        console.log('Connected to PostgreSQL database successfully at 10.2.140.234');
         release();
     }
 });

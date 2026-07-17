@@ -53,6 +53,11 @@ router.post("/start", async (req, res) => {
 
         executeShellScript("evon.sh");
 
+        // Communicate target amount to the Tkinter script
+        const fs = require('fs');
+        const targetPath = path.join(__dirname, "../../../../EVCS-4/target.txt");
+        fs.writeFileSync(targetPath, chargeAmount.toString());
+
         res.json({
             message: "Charging Started",
             session_id: sessionId
@@ -86,6 +91,11 @@ router.post("/stop", async (req, res) => {
         if (chargerRes.rows.length > 0) {
             executeShellScript("evoff.sh");
         }
+
+        // Clear target amount for Tkinter script
+        const fs = require('fs');
+        const targetPath = path.join(__dirname, "../../../../EVCS-4/target.txt");
+        fs.writeFileSync(targetPath, "0.0");
 
         res.json({ message: "Charging Stopped" });
     } catch (error) {
