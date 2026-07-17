@@ -50,10 +50,18 @@ const initDb = async () => {
                 status VARCHAR(50),
                 start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 end_time TIMESTAMP,
+                amount NUMERIC,
                 FOREIGN KEY (user_id) REFERENCES users (user_id),
                 FOREIGN KEY (charger_id) REFERENCES chargers (charger_id)
             )
         `);
+
+        // Add amount column if it doesn't exist (graceful migration)
+        try {
+            await pool.query("ALTER TABLE charging_sessions ADD COLUMN amount NUMERIC");
+        } catch (e) {
+            // Column likely already exists
+        }
 
         // Insert default admin user if not exists
         const resUser = await pool.query("SELECT * FROM users WHERE email = $1", ['evcharger@scrc.com']);

@@ -44,8 +44,8 @@ router.post("/start", async (req, res) => {
         }
 
         const sessionRes = await pool.query(
-            "INSERT INTO charging_sessions(user_id, charger_id, status) VALUES($1, $2, $3) RETURNING session_id",
-            [user_id, charger_id, "Charging"]
+            "INSERT INTO charging_sessions(user_id, charger_id, status, amount) VALUES($1, $2, $3, $4) RETURNING session_id",
+            [user_id, charger_id, "Charging", chargeAmount]
         );
         const sessionId = sessionRes.rows[0].session_id;
 
@@ -53,9 +53,9 @@ router.post("/start", async (req, res) => {
 
         executeShellScript("evon.sh");
 
-        // Communicate target amount to the Tkinter script
+        // Communicate target amount to the Tkinter script via universally accessible /tmp folder
         const fs = require('fs');
-        const targetPath = path.join(__dirname, "../../../../EVCS-4/target.txt");
+        const targetPath = "/tmp/evcs_target.txt";
         fs.writeFileSync(targetPath, chargeAmount.toString());
 
         res.json({
@@ -94,7 +94,7 @@ router.post("/stop", async (req, res) => {
 
         // Clear target amount for Tkinter script
         const fs = require('fs');
-        const targetPath = path.join(__dirname, "../../../../EVCS-4/target.txt");
+        const targetPath = "/tmp/evcs_target.txt";
         fs.writeFileSync(targetPath, "0.0");
 
         res.json({ message: "Charging Stopped" });
