@@ -104,6 +104,42 @@ router.post("/stop", async (req, res) => {
     }
 });
 
+// AUTO-STOP: called by the Pi when energy target is reached
+router.post("/stop-active", async (req, res) => {
+    try {
+        // Find the currently active (Charging) session
+        const sessionRes = await pool.query(
+            "SELECT * FROM charging_sessions WHERE status=$1 LIMIT 1",
+            ["Charging"]
+        );
+        if (sessionRes.rows.length === 0) {
+            return res.status(404).json({ message: "No active session found" });
+        }
+
+        const session = sessionRes.rows[0];
+
+        await pool.query(
+            "UPDATE charging_sessions SET status=$1, end_time=CURRENT_TIMESTAMP WHERE session_id=$2",
+            ["Completed", session.session_id]
+        );
+
+        await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["AVAILABLE", session.charger_id]);
+
+        // Turn off the relay
+        executeShellScript("evoff.sh");
+
+        // Clear target file
+        const fs = require('fs');
+        fs.writeFileSync("/tmp/evcs_target.txt", "0.0");
+
+        console.log(`[Auto-Stop] Session ${session.session_id} completed — target reached.`);
+        res.json({ message: "Session auto-completed", session_id: session.session_id });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send(error.message);
+    }
+});
+
 // GET SESSION STATUS API
 router.get("/status", async (req, res) => {
     const session_id = req.query.session_id;
