@@ -38,6 +38,8 @@ app.use("/api/session", sessionsRoute);
 
 app.use("/api/qr", qrRoute);
 
+app.use("/api/pzem", require("./routes/pzem"));
+
 
 
 
