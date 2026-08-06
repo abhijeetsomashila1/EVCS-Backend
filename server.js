@@ -37,10 +37,8 @@ app.use("/api/station", chargerRoute);
 app.use("/api/session", sessionsRoute);
 
 app.use("/api/qr", qrRoute);
-
-app.use("/api/pzem", require("./routes/pzem"));
-
-
+const pzem = require("./routes/pzem");
+app.use("/api/pzem", pzem.router);
 
 
 
@@ -71,7 +69,6 @@ const udpServer = dgram.createSocket("udp6");
 udpServer.on("message", (msg, rinfo) => {
     const message = msg.toString().trim();
     console.log(`[Wi-SUN UDP] Received from ${rinfo.address}: ${message}`);
-
     // If the EV charger announces itself, update its IP in the database!
     if (message.startsWith("HELLO:")) {
         const chargerId = message.split(":")[1];
@@ -82,7 +79,30 @@ udpServer.on("message", (msg, rinfo) => {
         });
     }
     
-    // (Optional) Here you can also parse "METRICS:..." and update the UI via WebSockets or save to DB
+    // Parse incoming PZEM telemetry from the Wi-SUN mesh network
+    // Expected format: METRICS:V:230.5,A:10.25,W:2362.6,Wh:15.0
+    if (message.startsWith("METRICS:")) {
+        try {
+            const metricsPart = message.substring("METRICS:".length);
+            const pairs = metricsPart.split(',');
+            
+            let energy_Wh = null;
+            for (let pair of pairs) {
+                const [key, val] = pair.split(':');
+                if (key === 'Wh') {
+                    energy_Wh = parseFloat(val);
+                    break;
+                }
+            }
+            
+            if (energy_Wh !== null) {
+                // Pass the real-time energy to the pzem logic to handle auto-stop and the website progress bar
+                pzem.handleNewEnergy(energy_Wh);
+            }
+        } catch (e) {
+            console.error(`[Wi-SUN UDP] Error parsing metrics: ${e.message}`);
+        }
+    }
 });
 
 udpServer.on("listening", () => {

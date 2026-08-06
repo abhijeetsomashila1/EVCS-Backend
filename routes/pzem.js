@@ -20,11 +20,9 @@ function executeEvOff() {
     });
 }
 
-// POST /api/pzem/update
-// Called by Charger_script.py every second with the latest energy reading
-router.post("/update", async (req, res) => {
-    const { energy_Wh } = req.body;
-    if (energy_Wh === undefined) return res.status(400).json({ message: "energy_Wh required" });
+// Internal function called by server.js when a Wi-SUN UDP METRICS packet arrives
+async function handleNewEnergy(energy_Wh) {
+    if (energy_Wh === undefined) return;
 
     latestEnergyWh = parseFloat(energy_Wh);
 
@@ -57,7 +55,11 @@ router.post("/update", async (req, res) => {
                 );
 
                 // 3. Clear the target file
-                fs.writeFileSync("/tmp/evcs_target.txt", "0.0");
+                try {
+                    if (fs.existsSync("/tmp/evcs_target.txt")) {
+                        fs.writeFileSync("/tmp/evcs_target.txt", "0.0");
+                    }
+                } catch (e) {}
 
                 console.log(`[Auto-Stop] Session ${session.session_id} completed.`);
             }
@@ -65,9 +67,7 @@ router.post("/update", async (req, res) => {
     } catch (err) {
         console.error("[Auto-Stop] DB check error:", err.message);
     }
-
-    res.json({ ok: true });
-});
+}
 
 // GET /api/pzem/latest
 // Called by the frontend to get the latest energy reading for the progress bar
@@ -75,4 +75,4 @@ router.get("/latest", (req, res) => {
     res.json({ energy_Wh: latestEnergyWh });
 });
 
-module.exports = router;
+module.exports = { router, handleNewEnergy };
