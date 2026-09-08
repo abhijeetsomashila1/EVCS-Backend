@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 // Connect to PostgreSQL database hosted on the user's Windows PC
 const pool = new Pool({
     user: 'postgres',
-    host: '10.2.140.234',
+    host: '10.2.203.209',
     database: 'evcharger', 
     password: 'Brun#@bh1', 
     port: 5432,
