@@ -62,14 +62,9 @@ app.listen(3000, "0.0.0.0", ()=>{
     console.log("Server started on port 3000");
 });
 
-// Initialize Physical Relay GPIO
-const relayController = require("./relayController");
-relayController.initializeRelay();
-
 // Graceful shutdown
 function handleExit(signal) {
-    console.log(`\nReceived ${signal}. Shutting down gracefully...`);
-    relayController.cleanupRelay();
+    console.log(`\nReceived ${signal}. Shutting down...`);
     process.exit(0);
 }
 process.on('SIGINT', handleExit);

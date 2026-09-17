@@ -2,12 +2,11 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../database");
 const fs = require("fs");
-const relayController = require("../relayController");
 
 // In-memory store for latest PZEM reading
 let latestEnergyWh = 0.0;
 
-// Internal function called by server.js when a Wi-SUN UDP METRICS packet arrives
+// Internal function called by server.js when a local UDP METRICS packet arrives
 async function handleNewEnergy(energy_Wh) {
     if (energy_Wh === undefined) return;
 
@@ -28,8 +27,12 @@ async function handleNewEnergy(energy_Wh) {
             if (targetUnits > 0 && currentUnits >= targetUnits) {
                 console.log(`[Auto-Stop] Target reached: ${currentUnits.toFixed(3)} >= ${targetUnits} units. Stopping session ${session.session_id}...`);
 
-                // 1. Run relay OFF via GPIO
-                await relayController.turnRelayOff();
+                // 1. Clear the target file (Charger_script.py turns OFF the GPIO 17 relay)
+                try {
+                    fs.writeFileSync("/tmp/evcs_target.txt", "0.0");
+                } catch (e) {
+                    console.error("[Auto-Stop] Failed to clear /tmp/evcs_target.txt:", e.message);
+                }
 
                 // 2. Update database
                 await pool.query(
@@ -40,13 +43,6 @@ async function handleNewEnergy(energy_Wh) {
                     "UPDATE chargers SET status=$1 WHERE charger_id=$2",
                     ["AVAILABLE", session.charger_id]
                 );
-
-                // 3. Clear the target file
-                try {
-                    if (fs.existsSync("/tmp/evcs_target.txt")) {
-                        fs.writeFileSync("/tmp/evcs_target.txt", "0.0");
-                    }
-                } catch (e) {}
 
                 console.log(`[Auto-Stop] Session ${session.session_id} completed.`);
             }

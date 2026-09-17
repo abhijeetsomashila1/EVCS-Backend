@@ -2,26 +2,41 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../database");
 const fs = require("fs");
-const relayController = require("../relayController");
+
+const TARGET_PATH = "/tmp/evcs_target.txt";
+
+function setTargetAmount(amount) {
+    try {
+        fs.writeFileSync(TARGET_PATH, amount.toString());
+        console.log(`[Target File] Wrote ${amount} to ${TARGET_PATH}`);
+    } catch (err) {
+        console.error(`[Target File] Error writing to ${TARGET_PATH}:`, err.message);
+    }
+}
 
 // START CHARGING API
 router.post("/start", async (req, res) => {
     const { user_id, charger_id, amount } = req.body;
     const chargeAmount = amount || 0.1;
 
+    console.log(`[Start API] Request received: user_id=${user_id}, charger_id=${charger_id}, amount=${chargeAmount}`);
+
     try {
         const userRes = await pool.query("SELECT * FROM users WHERE user_id=$1", [user_id]);
         if (userRes.rows.length === 0) {
+            console.warn(`[Start API] User ${user_id} not found.`);
             return res.status(404).json({ message: "User not found" });
         }
 
         const chargerRes = await pool.query("SELECT * FROM chargers WHERE charger_id=$1", [charger_id]);
         if (chargerRes.rows.length === 0) {
+            console.warn(`[Start API] Charger ${charger_id} not found.`);
             return res.status(404).json({ message: "Charger not found" });
         }
 
         const chargerRow = chargerRes.rows[0];
         if (chargerRow.status !== "AVAILABLE") {
+            console.warn(`[Start API] Charger ${charger_id} is busy (status: ${chargerRow.status}).`);
             return res.status(400).json({ message: "Charger is already in use" });
         }
 
@@ -33,26 +48,25 @@ router.post("/start", async (req, res) => {
 
         await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["CHARGING", charger_id]);
 
-        // Turn on the relay directly via GPIO
-        await relayController.turnRelayOn();
+        // Communicate target amount to Charger_script.py (which turns ON GPIO 17 relay)
+        setTargetAmount(chargeAmount);
 
-        // Communicate target amount to the Tkinter script via universally accessible /tmp folder
-        const targetPath = "/tmp/evcs_target.txt";
-        fs.writeFileSync(targetPath, chargeAmount.toString());
+        console.log(`[Start API] Session ${sessionId} successfully started for charger ${charger_id}.`);
 
         res.json({
             message: "Charging Started",
             session_id: sessionId
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
+        console.error("[Start API] Error:", error.message || error);
+        res.status(500).json({ message: error.message || "Failed to start charging" });
     }
 });
 
 // STOP CHARGING API
 router.post("/stop", async (req, res) => {
     const { session_id } = req.body;
+    console.log(`[Stop API] Request received for session_id=${session_id}`);
 
     try {
         const sessionRes = await pool.query("SELECT * FROM charging_sessions WHERE session_id=$1", [session_id]);
@@ -69,24 +83,20 @@ router.post("/stop", async (req, res) => {
 
         await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["AVAILABLE", db_charger_id]);
 
-        // Turn off the relay directly via GPIO
-        await relayController.turnRelayOff();
+        // Set target to 0.0 so Charger_script.py turns OFF GPIO 17 relay
+        setTargetAmount("0.0");
 
-        // Clear target amount for Tkinter script
-        const targetPath = "/tmp/evcs_target.txt";
-        fs.writeFileSync(targetPath, "0.0");
-
+        console.log(`[Stop API] Session ${session_id} stopped.`);
         res.json({ message: "Charging Stopped" });
     } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
+        console.error("[Stop API] Error:", error.message || error);
+        res.status(500).json({ message: error.message || "Failed to stop charging" });
     }
 });
 
-// AUTO-STOP: called by the Pi when energy target is reached
+// AUTO-STOP: called when energy target is reached
 router.post("/stop-active", async (req, res) => {
     try {
-        // Find the currently active (Charging) session
         const sessionRes = await pool.query(
             "SELECT * FROM charging_sessions WHERE status=$1 LIMIT 1",
             ["Charging"]
@@ -104,17 +114,14 @@ router.post("/stop-active", async (req, res) => {
 
         await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["AVAILABLE", session.charger_id]);
 
-        // Turn off the relay directly via GPIO
-        await relayController.turnRelayOff();
+        // Clear target file so Charger_script.py turns OFF GPIO 17 relay
+        setTargetAmount("0.0");
 
-        // Clear target file
-        fs.writeFileSync("/tmp/evcs_target.txt", "0.0");
-
-        console.log(`[Auto-Stop] Session ${session.session_id} completed — target reached.`);
+        console.log(`[Auto-Stop] Session ${session.session_id} auto-completed.`);
         res.json({ message: "Session auto-completed", session_id: session.session_id });
     } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
+        console.error("[Auto-Stop API] Error:", error.message || error);
+        res.status(500).json({ message: error.message || "Failed to auto-stop session" });
     }
 });
 
@@ -129,8 +136,8 @@ router.get("/status", async (req, res) => {
         }
         res.json(sessionRes.rows[0]);
     } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
+        console.error("[Status API] Error:", error.message || error);
+        res.status(500).json({ message: error.message || "Failed to get session status" });
     }
 });
 
@@ -142,8 +149,8 @@ router.get("/history", async (req, res) => {
         const historyRes = await pool.query("SELECT * FROM charging_sessions WHERE user_id=$1 ORDER BY start_time DESC", [user_id]);
         res.json(historyRes.rows);
     } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
+        console.error("[History API] Error:", error.message || error);
+        res.status(500).json({ message: error.message || "Failed to get history" });
     }
 });
 

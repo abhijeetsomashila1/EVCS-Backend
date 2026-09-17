@@ -2,11 +2,13 @@ const { Pool } = require('pg');
 
 // Connect to PostgreSQL database hosted on the user's Windows PC
 const pool = new Pool({
-    user: 'postgres',
-    host: '10.2.135.61',
-    database: 'evcharger', 
-    password: 'Brun#@bh1', 
-    port: 5432,
+    user: process.env.DB_USER || 'postgres',
+    host: process.env.DB_HOST || '10.2.135.61',
+    database: process.env.DB_NAME || 'evcharger', 
+    password: process.env.DB_PASSWORD || 'Brun#@bh1', 
+    port: parseInt(process.env.DB_PORT || '5432', 10),
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 10000,
 });
 
 pool.connect((err, client, release) => {
