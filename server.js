@@ -62,6 +62,19 @@ app.listen(3000, "0.0.0.0", ()=>{
     console.log("Server started on port 3000");
 });
 
+// Initialize Physical Relay GPIO
+const relayController = require("./relayController");
+relayController.initializeRelay();
+
+// Graceful shutdown
+function handleExit(signal) {
+    console.log(`\nReceived ${signal}. Shutting down gracefully...`);
+    relayController.cleanupRelay();
+    process.exit(0);
+}
+process.on('SIGINT', handleExit);
+process.on('SIGTERM', handleExit);
+
 // Start UDP Server to listen for Wi-SUN packets from the EV Charger
 const dgram = require("dgram");
 const udpServer = dgram.createSocket("udp6");

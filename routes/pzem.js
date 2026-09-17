@@ -1,24 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const { exec } = require("child_process");
-const path = require("path");
 const pool = require("../database");
 const fs = require("fs");
+const relayController = require("../relayController");
 
 // In-memory store for latest PZEM reading
 let latestEnergyWh = 0.0;
-
-// Helper to execute evoff.sh
-function executeEvOff() {
-    const scriptPath = path.join(__dirname, "..", "evoff.sh");
-    exec(`bash "${scriptPath}"`, (error, stdout, stderr) => {
-        if (error) {
-            console.error("[Auto-Stop] Error executing evoff.sh:", error);
-            return;
-        }
-        console.log("[Auto-Stop] evoff.sh executed successfully. Relay OFF.");
-    });
-}
 
 // Internal function called by server.js when a Wi-SUN UDP METRICS packet arrives
 async function handleNewEnergy(energy_Wh) {
@@ -41,8 +28,8 @@ async function handleNewEnergy(energy_Wh) {
             if (targetUnits > 0 && currentUnits >= targetUnits) {
                 console.log(`[Auto-Stop] Target reached: ${currentUnits.toFixed(3)} >= ${targetUnits} units. Stopping session ${session.session_id}...`);
 
-                // 1. Run evoff.sh to physically turn off the relay
-                executeEvOff();
+                // 1. Run relay OFF via GPIO
+                await relayController.turnRelayOff();
 
                 // 2. Update database
                 await pool.query(

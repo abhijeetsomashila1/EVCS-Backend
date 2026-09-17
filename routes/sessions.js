@@ -1,26 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../database");
-const { exec } = require("child_process");
-const path = require("path");
-
-// Helper to execute local shell scripts in the backend folder
-function executeShellScript(scriptName) {
-    // The backend root folder (one directory up from routes/)
-    const scriptPath = path.join(__dirname, "..", scriptName);
-    
-    // We execute it using bash. (On Windows you can also use just the scriptPath, but since it's an .sh file bash is safer if running under WSL/Linux)
-    exec(`bash "${scriptPath}"`, (error, stdout, stderr) => {
-        if (error) {
-            console.error(`[Shell Script] Error executing ${scriptName}:`, error);
-            return;
-        }
-        if (stderr) {
-            console.error(`[Shell Script] stderr from ${scriptName}:`, stderr);
-        }
-        console.log(`[Shell Script] stdout from ${scriptName}:`, stdout);
-    });
-}
+const fs = require("fs");
+const relayController = require("../relayController");
 
 // START CHARGING API
 router.post("/start", async (req, res) => {
@@ -51,10 +33,10 @@ router.post("/start", async (req, res) => {
 
         await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["CHARGING", charger_id]);
 
-        executeShellScript("evon.sh");
+        // Turn on the relay directly via GPIO
+        await relayController.turnRelayOn();
 
         // Communicate target amount to the Tkinter script via universally accessible /tmp folder
-        const fs = require('fs');
         const targetPath = "/tmp/evcs_target.txt";
         fs.writeFileSync(targetPath, chargeAmount.toString());
 
@@ -87,13 +69,10 @@ router.post("/stop", async (req, res) => {
 
         await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["AVAILABLE", db_charger_id]);
 
-        const chargerRes = await pool.query("SELECT wisun_id FROM chargers WHERE charger_id=$1", [db_charger_id]);
-        if (chargerRes.rows.length > 0) {
-            executeShellScript("evoff.sh");
-        }
+        // Turn off the relay directly via GPIO
+        await relayController.turnRelayOff();
 
         // Clear target amount for Tkinter script
-        const fs = require('fs');
         const targetPath = "/tmp/evcs_target.txt";
         fs.writeFileSync(targetPath, "0.0");
 
@@ -125,11 +104,10 @@ router.post("/stop-active", async (req, res) => {
 
         await pool.query("UPDATE chargers SET status=$1 WHERE charger_id=$2", ["AVAILABLE", session.charger_id]);
 
-        // Turn off the relay
-        executeShellScript("evoff.sh");
+        // Turn off the relay directly via GPIO
+        await relayController.turnRelayOff();
 
         // Clear target file
-        const fs = require('fs');
         fs.writeFileSync("/tmp/evcs_target.txt", "0.0");
 
         console.log(`[Auto-Stop] Session ${session.session_id} completed — target reached.`);
