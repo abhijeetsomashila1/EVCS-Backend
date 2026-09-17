@@ -42,20 +42,20 @@ app.use("/api/pzem", pzem.router);
 
 
 
-// Test API
+const path = require("path");
 
-app.get("/",(req,res)=>{
+// Serve frontend static files
+const frontendPath = path.join(__dirname, "../../frontend/dist");
+app.use(express.static(frontendPath));
 
-
-    res.send("EV Charger Backend Running");
-
-
+// Catch-all route to serve index.html for React Router (must be AFTER API routes)
+app.get("*", (req, res) => {
+    // Prevent catching API routes that aren't found
+    if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ message: "API endpoint not found" });
+    }
+    res.sendFile(path.join(frontendPath, "index.html"));
 });
-
-
-
-
-
 
 // Start HTTP server
 app.listen(3000, "0.0.0.0", ()=>{
@@ -81,18 +81,9 @@ const udpServer = dgram.createSocket("udp6");
 
 udpServer.on("message", (msg, rinfo) => {
     const message = msg.toString().trim();
-    console.log(`[Wi-SUN UDP] Received from ${rinfo.address}: ${message}`);
-    // If the EV charger announces itself, update its IP in the database!
-    if (message.startsWith("HELLO:")) {
-        const chargerId = message.split(":")[1];
-        db.run("UPDATE chargers SET wisun_id=? WHERE charger_id=?", [rinfo.address, chargerId], (err) => {
-            if (!err) {
-                console.log(`[Wi-SUN] Learned new IP for ${chargerId}: ${rinfo.address}`);
-            }
-        });
-    }
+    console.log(`[Local UDP] Received from ${rinfo.address}: ${message}`);
     
-    // Parse incoming PZEM telemetry from the Wi-SUN mesh network
+    // Parse incoming PZEM telemetry from the local Python script
     // Expected format: METRICS:V:230.5,A:10.25,W:2362.6,Wh:15.0
     if (message.startsWith("METRICS:")) {
         try {
@@ -113,15 +104,15 @@ udpServer.on("message", (msg, rinfo) => {
                 pzem.handleNewEnergy(energy_Wh);
             }
         } catch (e) {
-            console.error(`[Wi-SUN UDP] Error parsing metrics: ${e.message}`);
+            console.error(`[Local UDP] Error parsing metrics: ${e.message}`);
         }
     }
 });
 
 udpServer.on("listening", () => {
     const address = udpServer.address();
-    console.log(`[Wi-SUN] UDP server listening on port ${address.port}`);
+    console.log(`[Local UDP] Server listening on port ${address.port}`);
 });
 
-// Bind to port 5000 (as defined in wisun_bridge.py SERVER_UDP_PORT)
+// Bind to port 5000 (as defined in Charger_script.py LOCAL_UDP_PORT)
 udpServer.bind(5000);
