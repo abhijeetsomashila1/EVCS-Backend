@@ -27,7 +27,9 @@ async function handleNewEnergy(energy_Wh) {
             if (targetUnits > 0 && currentUnits >= targetUnits) {
                 console.log(`[Auto-Stop] Target reached: ${currentUnits.toFixed(3)} >= ${targetUnits} units. Stopping session ${session.session_id}...`);
 
-                // 1. Clear the target file (Charger_script.py turns OFF the GPIO 17 relay)
+                // 1. Instantly switch off hardware relay & clear target file
+                const { exec } = require("child_process");
+                exec('pinctrl set 17 op dl 2>/dev/null || raspi-gpio set 17 op dl 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.OUT); G.output(17, G.LOW)" 2>/dev/null');
                 try {
                     fs.writeFileSync("/tmp/evcs_target.txt", "0.0");
                 } catch (e) {
