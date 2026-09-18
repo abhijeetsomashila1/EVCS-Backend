@@ -49,8 +49,7 @@ const frontendPath = path.join(__dirname, "../../frontend/dist");
 app.use(express.static(frontendPath));
 
 // Catch-all route to serve index.html for React Router (must be AFTER API routes)
-app.get("*", (req, res) => {
-    // Prevent catching API routes that aren't found
+app.get(/.*/, (req, res) => {
     if (req.path.startsWith('/api/')) {
         return res.status(404).json({ message: "API endpoint not found" });
     }
