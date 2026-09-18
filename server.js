@@ -46,7 +46,7 @@ const path = require("path");
 const fs = require("fs");
 
 // Serve frontend static files if dist folder exists
-const frontendPath = path.join(__dirname, "../../frontend/dist");
+const frontendPath = path.join(__dirname, "../../../evcs-frontend/dist");
 if (fs.existsSync(frontendPath)) {
     app.use(express.static(frontendPath));
     app.get(/.*/, (req, res) => {
