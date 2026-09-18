@@ -1,3 +1,3 @@
 #!/bin/bash
-# Execute evon command
-evon 2>/dev/null || /usr/bin/evon
+# Try the global command first, fallback to raw commands
+/usr/bin/evon 2>/dev/null || pinctrl set 17 ip pn 2>/dev/null || raspi-gpio set 17 ip pn
