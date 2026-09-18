@@ -13,21 +13,18 @@ const IS_ACTIVE_LOW = process.env.RELAY_ACTIVE_LOW === "true";
  * Tries pinctrl (Bookworm/Pi 5), raspi-gpio (Bullseye), and Python RPi.GPIO fallback.
  */
 function setRelay(turnOn, targetAmount = 0.1) {
-    // If active-low, HIGH is OFF and LOW is ON. Otherwise normal active-high.
-    const effectiveHigh = IS_ACTIVE_LOW ? !turnOn : turnOn;
-    const level = effectiveHigh ? "dh" : "dl";
-    const pyVal = effectiveHigh ? "HIGH" : "LOW";
-    
-    console.log(`[Relay Control] Switching GPIO 17 -> ${turnOn ? "ON" : "OFF"} (pin level: ${level})`);
+    console.log(`[Relay Control] Switching SSR-25DA -> ${turnOn ? "ON" : "OFF"}`);
 
-    // 1. Direct hardware GPIO toggle
-    const cmd = `pinctrl set 17 op ${level} 2>/dev/null || raspi-gpio set 17 op ${level} 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.OUT); G.output(17, G.${pyVal})" 2>/dev/null`;
+    // For 5V Low-Side SSR-25DA:
+    // ON  = op dl (Output LOW / 0V sinks current from 5V)
+    // OFF = ip pn (Input / High-Impedance breaks circuit safely)
+    const cmd = turnOn
+        ? 'pinctrl set 17 op dl 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.OUT); G.output(17, G.LOW)" 2>/dev/null'
+        : 'pinctrl set 17 ip pn 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.IN)" 2>/dev/null';
+
     exec(cmd, (err) => {
-        if (err) {
-            console.error("[Relay Control] Hardware switch error:", err.message);
-        } else {
-            console.log(`[Relay Control] GPIO 17 hardware successfully set to ${turnOn ? "HIGH (ON)" : "LOW (OFF)"}`);
-        }
+        if (err) console.error("[Relay Control] Error:", err.message);
+        else console.log(`[Relay Control] SSR-25DA successfully set to ${turnOn ? "ON" : "OFF"}`);
     });
 
     // 2. Also write target file for Charger_script.py (display & telemetry)
