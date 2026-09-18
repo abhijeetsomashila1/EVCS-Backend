@@ -43,18 +43,22 @@ app.use("/api/pzem", pzem.router);
 
 
 const path = require("path");
+const fs = require("fs");
 
-// Serve frontend static files
+// Serve frontend static files if dist folder exists
 const frontendPath = path.join(__dirname, "../../frontend/dist");
-app.use(express.static(frontendPath));
-
-// Catch-all route to serve index.html for React Router (must be AFTER API routes)
-app.get(/.*/, (req, res) => {
-    if (req.path.startsWith('/api/')) {
-        return res.status(404).json({ message: "API endpoint not found" });
-    }
-    res.sendFile(path.join(frontendPath, "index.html"));
-});
+if (fs.existsSync(frontendPath)) {
+    app.use(express.static(frontendPath));
+    app.get(/.*/, (req, res) => {
+        if (req.path.startsWith('/api/')) {
+            return res.status(404).json({ message: "API endpoint not found" });
+        }
+        res.sendFile(path.join(frontendPath, "index.html"));
+    });
+    console.log(`[Frontend] Serving static files from ${frontendPath}`);
+} else {
+    console.log("[Frontend] No dist folder found — use Vite dev server on port 5173");
+}
 
 // Start HTTP server
 app.listen(3000, "0.0.0.0", ()=>{
