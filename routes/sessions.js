@@ -60,4 +60,17 @@ router.get("/history", (req, res) => {
     res.json([]);
 });
 
+// RESET — called on page load/refresh to ensure relay is OFF and state is clean
+router.post("/reset", (req, res) => {
+    console.log("[Reset] Page loaded — turning relay OFF");
+    exec(`"${EVOFF_SCRIPT}"`, (err, stdout) => {
+        if (err) console.error("[Reset] evoff error:", err.message);
+        else console.log("[Reset] evoff:", stdout ? stdout.trim() : "Success");
+    });
+
+    try { fs.writeFileSync(TARGET_PATH, "0.0"); } catch (e) {}
+
+    return res.json({ message: "Reset complete" });
+});
+
 module.exports = router;
