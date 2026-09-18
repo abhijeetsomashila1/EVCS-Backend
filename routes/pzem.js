@@ -27,9 +27,9 @@ async function handleNewEnergy(energy_Wh) {
             if (targetUnits > 0 && currentUnits >= targetUnits) {
                 console.log(`[Auto-Stop] Target reached: ${currentUnits.toFixed(3)} >= ${targetUnits} units. Stopping session ${session.session_id}...`);
 
-                // 1. Execute global evoff to turn off the relay
+                // 1. Execute global evon (which physically turns the relay OFF)
                 const { exec } = require("child_process");
-                exec(`/usr/bin/evoff`, (err, stdout) => {
+                exec(`/usr/bin/evon`, (err, stdout) => {
                     if (err) console.error("[Auto-Stop] Error executing evoff.sh:", err.message);
                     else console.log("[Auto-Stop] evoff.sh executed:", stdout.trim());
                 });
