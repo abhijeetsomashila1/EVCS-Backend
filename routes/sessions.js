@@ -12,27 +12,25 @@ const IS_ACTIVE_LOW = process.env.RELAY_ACTIVE_LOW === "true";
  * Direct, instant GPIO 17 hardware control on Raspberry Pi.
  * Tries pinctrl (Bookworm/Pi 5), raspi-gpio (Bullseye), and Python RPi.GPIO fallback.
  */
+const path = require("path");
+
 function setRelay(turnOn, targetAmount = 0.1) {
-    console.log(`[Relay Control] Switching SSR-25DA -> ${turnOn ? "ON" : "OFF"}`);
+    const scriptName = turnOn ? "evon.sh" : "evoff.sh";
+    const scriptPath = path.join(__dirname, "..", scriptName);
 
-    // Inverted logic to match physical SSR response
-    const cmd = turnOn
-        ? 'pinctrl set 17 ip pn 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.IN)" 2>/dev/null'
-        : 'pinctrl set 17 op dl 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.OUT); G.output(17, G.LOW)" 2>/dev/null';
+    console.log(`[Relay Control] Executing shell script: ${scriptName}`);
 
-    exec(cmd, (err) => {
-        if (err) console.error("[Relay Control] Error:", err.message);
-        else console.log(`[Relay Control] SSR-25DA successfully set to ${turnOn ? "ON" : "OFF"}`);
+    // Execute the shell script directly
+    exec(`bash "${scriptPath}"`, (err, stdout, stderr) => {
+        if (err) console.error(`[Relay Control] Error running ${scriptName}:`, err.message);
+        else console.log(`[Relay Control] ${scriptName} executed successfully:`, stdout.trim());
     });
 
-    // 2. Also write target file for Charger_script.py (display & telemetry)
+    // Also write target file for Charger_script.py (display & telemetry)
     try {
         const fileVal = turnOn ? (targetAmount || 0.1).toString() : "0.0";
         fs.writeFileSync(TARGET_PATH, fileVal);
-        console.log(`[Relay Control] Wrote ${fileVal} to ${TARGET_PATH}`);
-    } catch (e) {
-        console.error("[Relay Control] Could not write target file:", e.message);
-    }
+    } catch (e) {}
 }
 
 // START CHARGING API
