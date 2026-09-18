@@ -1,138 +1,63 @@
 const express = require("express");
 const router = express.Router();
-const pool = require("../database");
 const fs = require("fs");
 const { exec } = require("child_process");
-
-const TARGET_PATH = "/tmp/evcs_target.txt";
-
-const IS_ACTIVE_LOW = process.env.RELAY_ACTIVE_LOW === "true";
-
-/**
- * Direct, instant GPIO 17 hardware control on Raspberry Pi.
- * Tries pinctrl (Bookworm/Pi 5), raspi-gpio (Bullseye), and Python RPi.GPIO fallback.
- */
 const path = require("path");
 
-function setRelay(turnOn, targetAmount = 0.1) {
-    const scriptName = turnOn ? "evon.sh" : "evoff.sh";
-    const scriptPath = path.join(__dirname, "..", scriptName);
+const TARGET_PATH = "/tmp/evcs_target.txt";
+const EVON_SCRIPT  = path.join(__dirname, "..", "evon.sh");
+const EVOFF_SCRIPT = path.join(__dirname, "..", "evoff.sh");
 
-    console.log(`[Relay Control] Executing shell script: ${scriptName}`);
-
-    // Execute the shell script directly
-    exec(`bash "${scriptPath}"`, (err, stdout, stderr) => {
-        if (err) console.error(`[Relay Control] Error running ${scriptName}:`, err.message);
-        else console.log(`[Relay Control] ${scriptName} executed successfully:`, stdout.trim());
-    });
-
-    // Also write target file for Charger_script.py (display & telemetry)
-    try {
-        const fileVal = turnOn ? (targetAmount || 0.1).toString() : "0.0";
-        fs.writeFileSync(TARGET_PATH, fileVal);
-    } catch (e) {}
-}
-
-// START CHARGING API
+// START CHARGING — fires relay immediately, no database involved
 router.post("/start", (req, res) => {
-    const { user_id, charger_id, amount } = req.body;
+    const { amount } = req.body;
     const chargeAmount = parseFloat(amount) || 0.1;
 
-    console.log(`[Start API] Triggered! user_id=${user_id}, charger_id=${charger_id}, amount=${chargeAmount}`);
-
-    // 1. INSTANTLY turn on physical relay on GPIO 17
-    setRelay(true, chargeAmount);
-
-    const sessionId = Date.now();
-
-    // 2. Send response IMMEDIATELY back to browser so spinner stops with ZERO delay
-    res.json({
-        message: "Charging Started",
-        session_id: sessionId
+    console.log(`[Start] Firing evon.sh — amount=${chargeAmount}`);
+    exec(`bash "${EVON_SCRIPT}"`, (err, stdout) => {
+        if (err) console.error("[Start] evon.sh error:", err.message);
+        else console.log("[Start] evon.sh:", stdout.trim());
     });
 
-    // 3. Log to database in background (non-blocking)
-    pool.query(
-        "INSERT INTO charging_sessions(user_id, charger_id, status, amount) VALUES($1, $2, $3, $4)",
-        [user_id || 1, charger_id || "EV001", "Charging", chargeAmount]
-    ).then(() => {
-        return pool.query("UPDATE chargers SET status='CHARGING' WHERE charger_id=$1", [charger_id || "EV001"]);
-    }).catch((dbErr) => {
-        console.warn("[Start API] Background DB logging notice:", dbErr.message);
-    });
+    try { fs.writeFileSync(TARGET_PATH, chargeAmount.toString()); } catch (e) {}
+
+    return res.json({ message: "Charging Started", session_id: Date.now() });
 });
 
-// STOP CHARGING API
+// STOP CHARGING — fires relay off immediately, no database involved
 router.post("/stop", (req, res) => {
-    const { session_id } = req.body;
-    console.log(`[Stop API] Triggered for session_id=${session_id}`);
-
-    // 1. INSTANTLY turn off physical relay on GPIO 17
-    setRelay(false, 0.0);
-
-    // 2. Respond immediately
-    res.json({ message: "Charging Stopped" });
-
-    // 3. Update database in background (non-blocking)
-    const updateQuery = session_id
-        ? pool.query("UPDATE charging_sessions SET status='Completed', end_time=CURRENT_TIMESTAMP WHERE session_id=$1", [session_id])
-        : pool.query("UPDATE charging_sessions SET status='Completed', end_time=CURRENT_TIMESTAMP WHERE status='Charging'");
-
-    updateQuery.then(() => {
-        return pool.query("UPDATE chargers SET status='AVAILABLE'");
-    }).catch((dbErr) => {
-        console.warn("[Stop API] Background DB update notice:", dbErr.message);
+    console.log("[Stop] Firing evoff.sh");
+    exec(`bash "${EVOFF_SCRIPT}"`, (err, stdout) => {
+        if (err) console.error("[Stop] evoff.sh error:", err.message);
+        else console.log("[Stop] evoff.sh:", stdout.trim());
     });
+
+    try { fs.writeFileSync(TARGET_PATH, "0.0"); } catch (e) {}
+
+    return res.json({ message: "Charging Stopped" });
 });
 
-// AUTO-STOP API
+// AUTO-STOP
 router.post("/stop-active", (req, res) => {
-    console.log("[Auto-Stop API] Triggered");
-
-    // 1. INSTANTLY turn off physical relay
-    setRelay(false, 0.0);
-
-    // 2. Respond immediately
-    res.json({ message: "Session auto-completed" });
-
-    // 3. Update database in background
-    pool.query(
-        "UPDATE charging_sessions SET status='Completed', end_time=CURRENT_TIMESTAMP WHERE status='Charging'"
-    ).then(() => {
-        return pool.query("UPDATE chargers SET status='AVAILABLE'");
-    }).catch((dbErr) => {
-        console.warn("[Auto-Stop API] Background DB notice:", dbErr.message);
+    console.log("[Auto-Stop] Firing evoff.sh");
+    exec(`bash "${EVOFF_SCRIPT}"`, (err, stdout) => {
+        if (err) console.error("[Auto-Stop] evoff.sh error:", err.message);
+        else console.log("[Auto-Stop] evoff.sh:", stdout.trim());
     });
+
+    try { fs.writeFileSync(TARGET_PATH, "0.0"); } catch (e) {}
+
+    return res.json({ message: "Session auto-completed" });
 });
 
-// GET SESSION STATUS API
-router.get("/status", async (req, res) => {
-    const session_id = req.query.session_id;
-
-    try {
-        const sessionRes = await pool.query("SELECT * FROM charging_sessions WHERE session_id=$1", [session_id]);
-        if (sessionRes.rows.length === 0) {
-            return res.status(404).json({ message: "Session not found" });
-        }
-        res.json(sessionRes.rows[0]);
-    } catch (error) {
-        res.status(500).json({ message: error.message || "Database error" });
-    }
+// STATUS (stub)
+router.get("/status", (req, res) => {
+    res.json({ status: "OK" });
 });
 
-// GET CHARGING HISTORY API
-router.get("/history", async (req, res) => {
-    const user_id = req.query.user_id || 1;
-
-    try {
-        const historyRes = await pool.query(
-            "SELECT * FROM charging_sessions WHERE user_id=$1 ORDER BY start_time DESC",
-            [user_id]
-        );
-        res.json(historyRes.rows);
-    } catch (error) {
-        res.status(500).json({ message: error.message || "Database error" });
-    }
+// HISTORY (stub)
+router.get("/history", (req, res) => {
+    res.json([]);
 });
 
 module.exports = router;
