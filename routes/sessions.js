@@ -5,8 +5,8 @@ const { exec } = require("child_process");
 const path = require("path");
 
 const TARGET_PATH = "/tmp/evcs_target.txt";
-const EVON_SCRIPT  = path.join(__dirname, "..", "evon.sh");
-const EVOFF_SCRIPT = path.join(__dirname, "..", "evoff.sh");
+const EVON_SCRIPT  = "/usr/bin/evon";
+const EVOFF_SCRIPT = "/usr/bin/evoff";
 
 // START CHARGING — fires relay immediately, no database involved
 router.post("/start", (req, res) => {
