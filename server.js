@@ -82,11 +82,10 @@ udpServer.on("message", (msg, rinfo) => {
     console.log(`[Local UDP] Received from ${rinfo.address}: ${message}`);
     
     // Parse incoming PZEM telemetry from the local Python script
-    // Expected format: METRICS:V:230.5,A:10.25,W:2362.6,Wh:15.0
-    if (message.startsWith("METRICS:")) {
+    // Expected format: V:230.5,A:10.25,W:2362.6,Wh:15.0
+    if (message.includes("Wh:")) {
         try {
-            const metricsPart = message.substring("METRICS:".length);
-            const pairs = metricsPart.split(',');
+            const pairs = message.split(',');
             
             let energy_Wh = null;
             for (let pair of pairs) {
@@ -97,7 +96,7 @@ udpServer.on("message", (msg, rinfo) => {
                 }
             }
             
-            if (energy_Wh !== null) {
+            if (energy_Wh !== null && !isNaN(energy_Wh)) {
                 // Pass the real-time energy to the pzem logic to handle auto-stop and the website progress bar
                 pzem.handleNewEnergy(energy_Wh);
             }
