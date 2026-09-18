@@ -6,18 +6,21 @@ const { exec } = require("child_process");
 
 const TARGET_PATH = "/tmp/evcs_target.txt";
 
+const IS_ACTIVE_LOW = process.env.RELAY_ACTIVE_LOW === "true";
+
 /**
- * Direct, instant GPIO 17 hardware control on the Raspberry Pi.
- * Tries modern pinctrl (Pi OS Bookworm / Pi 5), raspi-gpio (Bullseye), and Python RPi.GPIO.
- * Also updates /tmp/evcs_target.txt so the LCD display updates.
+ * Direct, instant GPIO 17 hardware control on Raspberry Pi.
+ * Tries pinctrl (Bookworm/Pi 5), raspi-gpio (Bullseye), and Python RPi.GPIO fallback.
  */
 function setRelay(turnOn, targetAmount = 0.1) {
-    const level = turnOn ? "dh" : "dl";
-    const pyVal = turnOn ? "HIGH" : "LOW";
+    // If active-low, HIGH is OFF and LOW is ON. Otherwise normal active-high.
+    const effectiveHigh = IS_ACTIVE_LOW ? !turnOn : turnOn;
+    const level = effectiveHigh ? "dh" : "dl";
+    const pyVal = effectiveHigh ? "HIGH" : "LOW";
     
-    console.log(`[Relay Control] Switching GPIO 17 -> ${turnOn ? "ON (HIGH)" : "OFF (LOW)"}`);
+    console.log(`[Relay Control] Switching GPIO 17 -> ${turnOn ? "ON" : "OFF"} (pin level: ${level})`);
 
-    // 1. Direct hardware switch
+    // 1. Direct hardware GPIO toggle
     const cmd = `pinctrl set 17 op ${level} 2>/dev/null || raspi-gpio set 17 op ${level} 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.OUT); G.output(17, G.${pyVal})" 2>/dev/null`;
     exec(cmd, (err) => {
         if (err) {
@@ -27,7 +30,7 @@ function setRelay(turnOn, targetAmount = 0.1) {
         }
     });
 
-    // 2. Update target file for LCD display and telemetry
+    // 2. Also write target file for Charger_script.py (display & telemetry)
     try {
         const fileVal = turnOn ? (targetAmount || 0.1).toString() : "0.0";
         fs.writeFileSync(TARGET_PATH, fileVal);
@@ -38,84 +41,75 @@ function setRelay(turnOn, targetAmount = 0.1) {
 }
 
 // START CHARGING API
-router.post("/start", async (req, res) => {
+router.post("/start", (req, res) => {
     const { user_id, charger_id, amount } = req.body;
     const chargeAmount = parseFloat(amount) || 0.1;
 
     console.log(`[Start API] Triggered! user_id=${user_id}, charger_id=${charger_id}, amount=${chargeAmount}`);
 
-    // 1. INSTANTLY turn on the physical relay on GPIO 17
+    // 1. INSTANTLY turn on physical relay on GPIO 17
     setRelay(true, chargeAmount);
 
-    let sessionId = Date.now();
+    const sessionId = Date.now();
 
-    // 2. Best-effort database recording (will not hang or block the relay)
-    try {
-        const sessionRes = await pool.query(
-            "INSERT INTO charging_sessions(user_id, charger_id, status, amount) VALUES($1, $2, $3, $4) RETURNING session_id",
-            [user_id || 1, charger_id || "EV001", "Charging", chargeAmount]
-        );
-        if (sessionRes.rows.length > 0) {
-            sessionId = sessionRes.rows[0].session_id;
-        }
-        await pool.query("UPDATE chargers SET status='CHARGING' WHERE charger_id=$1", [charger_id || "EV001"]);
-    } catch (dbErr) {
-        console.warn("[Start API] Database logging warning (relay is ON regardless):", dbErr.message);
-    }
-
-    // 3. Immediately return response so frontend spinner stops
-    return res.json({
+    // 2. Send response IMMEDIATELY back to browser so spinner stops with ZERO delay
+    res.json({
         message: "Charging Started",
         session_id: sessionId
+    });
+
+    // 3. Log to database in background (non-blocking)
+    pool.query(
+        "INSERT INTO charging_sessions(user_id, charger_id, status, amount) VALUES($1, $2, $3, $4)",
+        [user_id || 1, charger_id || "EV001", "Charging", chargeAmount]
+    ).then(() => {
+        return pool.query("UPDATE chargers SET status='CHARGING' WHERE charger_id=$1", [charger_id || "EV001"]);
+    }).catch((dbErr) => {
+        console.warn("[Start API] Background DB logging notice:", dbErr.message);
     });
 });
 
 // STOP CHARGING API
-router.post("/stop", async (req, res) => {
+router.post("/stop", (req, res) => {
     const { session_id } = req.body;
     console.log(`[Stop API] Triggered for session_id=${session_id}`);
 
-    // 1. INSTANTLY turn off the physical relay on GPIO 17
+    // 1. INSTANTLY turn off physical relay on GPIO 17
     setRelay(false, 0.0);
 
-    // 2. Best-effort database update
-    try {
-        if (session_id) {
-            await pool.query(
-                "UPDATE charging_sessions SET status='Completed', end_time=CURRENT_TIMESTAMP WHERE session_id=$1",
-                [session_id]
-            );
-        } else {
-            await pool.query(
-                "UPDATE charging_sessions SET status='Completed', end_time=CURRENT_TIMESTAMP WHERE status='Charging'"
-            );
-        }
-        await pool.query("UPDATE chargers SET status='AVAILABLE'");
-    } catch (dbErr) {
-        console.warn("[Stop API] Database logging warning (relay is OFF regardless):", dbErr.message);
-    }
+    // 2. Respond immediately
+    res.json({ message: "Charging Stopped" });
 
-    return res.json({ message: "Charging Stopped" });
+    // 3. Update database in background (non-blocking)
+    const updateQuery = session_id
+        ? pool.query("UPDATE charging_sessions SET status='Completed', end_time=CURRENT_TIMESTAMP WHERE session_id=$1", [session_id])
+        : pool.query("UPDATE charging_sessions SET status='Completed', end_time=CURRENT_TIMESTAMP WHERE status='Charging'");
+
+    updateQuery.then(() => {
+        return pool.query("UPDATE chargers SET status='AVAILABLE'");
+    }).catch((dbErr) => {
+        console.warn("[Stop API] Background DB update notice:", dbErr.message);
+    });
 });
 
 // AUTO-STOP API
-router.post("/stop-active", async (req, res) => {
+router.post("/stop-active", (req, res) => {
     console.log("[Auto-Stop API] Triggered");
 
     // 1. INSTANTLY turn off physical relay
     setRelay(false, 0.0);
 
-    // 2. Best-effort database update
-    try {
-        await pool.query(
-            "UPDATE charging_sessions SET status='Completed', end_time=CURRENT_TIMESTAMP WHERE status='Charging'"
-        );
-        await pool.query("UPDATE chargers SET status='AVAILABLE'");
-    } catch (dbErr) {
-        console.warn("[Auto-Stop API] Database logging warning:", dbErr.message);
-    }
+    // 2. Respond immediately
+    res.json({ message: "Session auto-completed" });
 
-    return res.json({ message: "Session auto-completed" });
+    // 3. Update database in background
+    pool.query(
+        "UPDATE charging_sessions SET status='Completed', end_time=CURRENT_TIMESTAMP WHERE status='Charging'"
+    ).then(() => {
+        return pool.query("UPDATE chargers SET status='AVAILABLE'");
+    }).catch((dbErr) => {
+        console.warn("[Auto-Stop API] Background DB notice:", dbErr.message);
+    });
 });
 
 // GET SESSION STATUS API
