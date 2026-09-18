@@ -1,27 +1,36 @@
-const { Pool } = require('pg');
+let pool;
 
-// Connect to PostgreSQL database hosted on the user's Windows PC
-const pool = new Pool({
-    user: process.env.DB_USER || 'postgres',
-    host: process.env.DB_HOST || '10.2.135.61',
-    database: process.env.DB_NAME || 'evcharger', 
-    password: process.env.DB_PASSWORD || 'Brun#@bh1', 
-    port: parseInt(process.env.DB_PORT || '5432', 10),
-    connectionTimeoutMillis: 5000,
-    idleTimeoutMillis: 10000,
-});
+try {
+    const { Pool } = require('pg');
+    pool = new Pool({
+        user: process.env.DB_USER || 'postgres',
+        host: process.env.DB_HOST || '10.2.135.61',
+        database: process.env.DB_NAME || 'evcharger',
+        password: process.env.DB_PASSWORD || 'Brun#@bh1',
+        port: parseInt(process.env.DB_PORT || '5432', 10),
+        connectionTimeoutMillis: 3000,
+        idleTimeoutMillis: 10000,
+    });
 
-pool.connect((err, client, release) => {
-    if (err) {
-        console.error('Error acquiring client from PostgreSQL pool', err.stack);
-    } else {
-        console.log('Connected to PostgreSQL database successfully at 10.2.135.61');
-        release();
-    }
-});
+    pool.connect((err, client, release) => {
+        if (err) {
+            console.warn('[DB] PostgreSQL unreachable — running without database:', err.message);
+        } else {
+            console.log('[DB] Connected to PostgreSQL at', process.env.DB_HOST || '10.2.135.61');
+            release();
+        }
+    });
+} catch (e) {
+    console.warn('[DB] pg module error — running without database:', e.message);
+    pool = null;
+}
 
 // Initialize tables and default data
 const initDb = async () => {
+    if (!pool) {
+        console.warn('[DB] Skipping database initialization — no connection available.');
+        return;
+    }
     try {
         // Users table
         await pool.query(`
