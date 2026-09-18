@@ -15,12 +15,10 @@ const IS_ACTIVE_LOW = process.env.RELAY_ACTIVE_LOW === "true";
 function setRelay(turnOn, targetAmount = 0.1) {
     console.log(`[Relay Control] Switching SSR-25DA -> ${turnOn ? "ON" : "OFF"}`);
 
-    // For 5V Low-Side SSR-25DA:
-    // ON  = op dl (Output LOW / 0V sinks current from 5V)
-    // OFF = ip pn (Input / High-Impedance breaks circuit safely)
+    // Inverted logic to match physical SSR response
     const cmd = turnOn
-        ? 'pinctrl set 17 op dl 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.OUT); G.output(17, G.LOW)" 2>/dev/null'
-        : 'pinctrl set 17 ip pn 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.IN)" 2>/dev/null';
+        ? 'pinctrl set 17 ip pn 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.IN)" 2>/dev/null'
+        : 'pinctrl set 17 op dl 2>/dev/null || python3 -c "import RPi.GPIO as G; G.setwarnings(False); G.setmode(G.BCM); G.setup(17, G.OUT); G.output(17, G.LOW)" 2>/dev/null';
 
     exec(cmd, (err) => {
         if (err) console.error("[Relay Control] Error:", err.message);
