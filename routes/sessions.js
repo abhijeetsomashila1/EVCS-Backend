@@ -1,76 +1,39 @@
 const express = require("express");
 const router = express.Router();
-const fs = require("fs");
 const { exec } = require("child_process");
-const path = require("path");
 
-const TARGET_PATH = "/tmp/evcs_target.txt";
-const EVON_SCRIPT  = "/usr/bin/evon"; // Physically turns the relay ON
-const EVOFF_SCRIPT = "/usr/bin/evoff";  // Physically turns the relay OFF
-
-// START CHARGING — fires relay immediately, no database involved
+// START CHARGING → run evon
 router.post("/start", (req, res) => {
-    const { amount } = req.body;
-    const chargeAmount = parseFloat(amount) || 0.1;
-
-    console.log(`[Start] Firing evon — amount=${chargeAmount}`);
-    exec(`"${EVON_SCRIPT}"`, (err, stdout) => {
-        if (err) console.error("[Start] evon error:", err.message);
-        else console.log("[Start] evon:", stdout ? stdout.trim() : "Success");
+    exec("evon", (err, stdout, stderr) => {
+        console.log("[Start] evon:", stdout || stderr || err?.message || "done");
     });
-
-    try { fs.writeFileSync(TARGET_PATH, chargeAmount.toString()); } catch (e) {}
-
-    return res.json({ message: "Charging Started", session_id: Date.now() });
+    res.json({ message: "Charging Started", session_id: Date.now() });
 });
 
-// STOP CHARGING — fires relay off immediately, no database involved
+// STOP CHARGING → run evoff
 router.post("/stop", (req, res) => {
-    console.log("[Stop] Firing evoff");
-    exec(`"${EVOFF_SCRIPT}"`, (err, stdout) => {
-        if (err) console.error("[Stop] evoff error:", err.message);
-        else console.log("[Stop] evoff:", stdout ? stdout.trim() : "Success");
+    exec("evoff", (err, stdout, stderr) => {
+        console.log("[Stop] evoff:", stdout || stderr || err?.message || "done");
     });
-
-    try { fs.writeFileSync(TARGET_PATH, "0.0"); } catch (e) {}
-
-    return res.json({ message: "Charging Stopped" });
+    res.json({ message: "Charging Stopped" });
 });
 
-// AUTO-STOP
-router.post("/stop-active", (req, res) => {
-    console.log("[Auto-Stop] Firing evoff");
-    exec(`"${EVOFF_SCRIPT}"`, (err, stdout) => {
-        if (err) console.error("[Auto-Stop] evoff error:", err.message);
-        else console.log("[Auto-Stop] evoff:", stdout ? stdout.trim() : "Success");
-    });
-
-    try { fs.writeFileSync(TARGET_PATH, "0.0"); } catch (e) {}
-
-    return res.json({ message: "Session auto-completed" });
-});
-
-// STATUS (stub)
-router.get("/status", (req, res) => {
-    res.json({ status: "OK" });
-});
-
-// HISTORY (stub)
-router.get("/history", (req, res) => {
-    res.json([]);
-});
-
-// RESET — called on page load/refresh to ensure relay is OFF and state is clean
+// RESET → run evoff (used on page load)
 router.post("/reset", (req, res) => {
-    console.log("[Reset] Page loaded — turning relay OFF");
-    exec(`"${EVOFF_SCRIPT}"`, (err, stdout) => {
-        if (err) console.error("[Reset] evoff error:", err.message);
-        else console.log("[Reset] evoff:", stdout ? stdout.trim() : "Success");
+    exec("evoff", (err, stdout, stderr) => {
+        console.log("[Reset] evoff:", stdout || stderr || err?.message || "done");
     });
-
-    try { fs.writeFileSync(TARGET_PATH, "0.0"); } catch (e) {}
-
-    return res.json({ message: "Reset complete" });
+    res.json({ message: "Reset complete" });
 });
+
+router.post("/stop-active", (req, res) => {
+    exec("evoff", (err, stdout, stderr) => {
+        console.log("[Auto-Stop] evoff:", stdout || stderr || err?.message || "done");
+    });
+    res.json({ message: "Session auto-completed" });
+});
+
+router.get("/status", (req, res) => res.json({ status: "OK" }));
+router.get("/history", (req, res) => res.json([]));
 
 module.exports = router;
