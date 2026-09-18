@@ -103,6 +103,14 @@ udpServer.on("message", (msg, rinfo) => {
     }
 });
 
+udpServer.on("error", (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.warn(`[Local UDP] Port 5000 already in use — UDP telemetry disabled. Run: sudo fuser -k 5000/udp`);
+    } else {
+        console.error(`[Local UDP] Error: ${err.message}`);
+    }
+});
+
 udpServer.on("listening", () => {
     const address = udpServer.address();
     console.log(`[Local UDP] Server listening on port ${address.port}`);
