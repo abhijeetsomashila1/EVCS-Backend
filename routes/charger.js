@@ -1,6 +1,16 @@
 const express = require("express");
 const router = express.Router();
-const pool = require("../database");
+
+const DUMMY_CHARGERS = [
+    {
+        charger_id: "EV001",
+        wisun_id: "WISUN-1234",
+        location: "SCRC Lab",
+        latitude: 17.445,
+        longitude: 78.348,
+        status: "AVAILABLE"
+    }
+];
 
 // GET SINGLE CHARGER STATUS
 // Example:
@@ -8,31 +18,20 @@ const pool = require("../database");
 router.get("/status", async (req, res) => {
     const chargerID = req.query.id;
 
-    try {
-        const queryRes = await pool.query("SELECT * FROM chargers WHERE charger_id = $1", [chargerID]);
-
-        if (queryRes.rows.length === 0) {
-            return res.status(404).send({ message: "Charger not found" });
-        }
-
-        res.json(queryRes.rows[0]);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
+    const charger = DUMMY_CHARGERS.find(c => c.charger_id === chargerID);
+    
+    if (!charger) {
+        return res.status(404).send({ message: "Charger not found" });
     }
+
+    res.json(charger);
 });
 
 // GET ALL CHARGERS
 // Example:
 // GET localhost:3000/api/station/all
 router.get("/all", async (req, res) => {
-    try {
-        const queryRes = await pool.query("SELECT * FROM chargers");
-        res.json(queryRes.rows);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
-    }
+    res.json(DUMMY_CHARGERS);
 });
 
 module.exports = router;

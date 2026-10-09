@@ -14,8 +14,7 @@ app.use(express.json());
 
 
 
-// Database connection (temporarily disabled - not needed for relay control)
-// const db = require("./database");
+// Database connection removed
 
 
 

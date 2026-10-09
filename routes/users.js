@@ -1,6 +1,12 @@
 const express = require("express");
 const router = express.Router();
-const pool = require("../database");
+
+// MOCK: Dummy User DB
+const DUMMY_USER = {
+    user_id: 1,
+    name: "Demo User",
+    email: "evcharger@scrc.com"
+};
 
 // LOGIN API
 router.post("/login", async (req, res) => {
@@ -10,71 +16,29 @@ router.post("/login", async (req, res) => {
         return res.status(400).json({ message: "Email and password are required" });
     }
 
-    try {
-        const queryRes = await pool.query("SELECT * FROM users WHERE email=$1 AND password=$2", [email, password]);
-
-        if (queryRes.rows.length === 0) {
-            return res.status(401).json({ message: "Invalid email or password" });
-        }
-
-        const row = queryRes.rows[0];
-        res.json({
-            message: "Login successful",
-            user_id: row.user_id,
-            name: row.name,
-            email: row.email
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
-    }
+    // Mock Login Logic
+    res.json({
+        message: "Login successful",
+        user_id: DUMMY_USER.user_id,
+        name: DUMMY_USER.name,
+        email: email
+    });
 });
 
 // REGISTER / LOGIN USER API
 router.post("/register-login", async (req, res) => {
     const { name, email } = req.body;
 
-    try {
-        const checkRes = await pool.query("SELECT * FROM users WHERE email=$1", [email]);
-
-        if (checkRes.rows.length > 0) {
-            return res.json({
-                message: "User already exists",
-                user_id: checkRes.rows[0].user_id
-            });
-        }
-
-        const insertRes = await pool.query(
-            "INSERT INTO users(name, email) VALUES($1, $2) RETURNING user_id",
-            [name, email]
-        );
-
-        res.json({
-            message: "User created",
-            user_id: insertRes.rows[0].user_id
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
-    }
+    res.json({
+        message: "User logged in (mocked)",
+        user_id: DUMMY_USER.user_id
+    });
 });
 
 // GET USER PROFILE API
 router.get("/user", async (req, res) => {
-    const user_id = req.query.id;
-
-    try {
-        const queryRes = await pool.query("SELECT * FROM users WHERE user_id=$1", [user_id]);
-
-        if (queryRes.rows.length === 0) {
-            return res.status(404).json({ message: "User not found" });
-        }
-
-        res.json(queryRes.rows[0]);
-    } catch (error) {
-        console.error(error);
-        res.status(500).send(error.message);
-    }
+    // Return dummy user for any requested ID
+    res.json(DUMMY_USER);
 });
 
 module.exports = router;
